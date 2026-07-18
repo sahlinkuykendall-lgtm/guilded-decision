@@ -260,6 +260,31 @@ main{max-width:640px;margin:0 auto;padding:18px 16px calc(env(safe-area-inset-bo
 }
 .chip button:hover{background:var(--oxblood)}
 
+/* ============ PRESETS ============ */
+.preset-list{display:flex;flex-direction:column;gap:8px}
+.preset-card{
+  display:flex;align-items:center;gap:12px;
+  background:rgba(13,10,7,.55);border:1px solid rgba(212,175,55,.3);
+  border-radius:12px;padding:12px 14px;cursor:pointer;
+  transition:.25s;animation:chipIn .3s ease;
+}
+.preset-card:hover{border-color:var(--gold);background:rgba(212,175,55,.08)}
+.preset-card.current{border-color:var(--gold-hi);box-shadow:0 0 0 1px var(--gold-hi), 0 4px 16px rgba(212,175,55,.2)}
+.preset-name{flex:1;min-width:0}
+.preset-name b{font-family:'Cinzel',serif;font-weight:700;font-size:13px;letter-spacing:.12em;color:var(--gold-hi);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.preset-name span{font-size:11px;color:var(--cream-dim);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+.preset-count{
+  font-family:'Cinzel',serif;font-size:11px;color:var(--cream-dim);
+  border:1px solid rgba(212,175,55,.3);border-radius:14px;padding:4px 10px;flex-shrink:0;
+}
+.preset-del{
+  background:rgba(110,20,35,.5);border:none;color:var(--cream);
+  width:26px;height:26px;border-radius:50%;cursor:pointer;font-size:12px;
+  line-height:1;transition:.2s;flex-shrink:0;
+}
+.preset-del:hover{background:var(--oxblood)}
+.preset-empty{text-align:center;color:var(--cream-dim);font-size:13px;padding:14px 0;letter-spacing:.08em}
+
 /* ============ RESULT MODAL ============ */
 #resultModal{
   position:fixed;inset:0;z-index:60;display:none;
@@ -463,6 +488,17 @@ footer{
           <button id="addItem" title="Add">+</button>
         </div>
         <div class="chip-list" id="chipList"></div>
+      </div>
+
+      <div class="items-panel table-surface" style="margin-top:16px">
+        <div class="items-head">
+          <h3>Preset Wheels</h3>
+        </div>
+        <div class="add-row">
+          <input id="presetInput" type="text" maxlength="30" placeholder="Name this wheel (e.g. Meal Wheel)…" autocomplete="off">
+          <button id="savePreset" title="Save current entries as preset">💾</button>
+        </div>
+        <div class="preset-list" id="presetList"></div>
       </div>
     </section>
 
@@ -750,7 +786,7 @@ document.getElementById('spinBtn').onclick=()=>{
 /* --- item editor --- */
 const chipList=document.getElementById('chipList');
 const itemInput=document.getElementById('itemInput');
-function saveItems(){ store.set('gs_items',items); renderChips(); drawWheel(); }
+function saveItems(){ store.set('gs_items',items); renderChips(); drawWheel(); if(typeof renderPresets==='function')renderPresets(); }
 function renderChips(){
   chipList.innerHTML=items.map((it,i)=>
     `<span class="chip"><i style="background:${itemColor(i)}"></i>${escapeHtml(it)}<button data-i="${i}" title="Remove">✕</button></span>`
@@ -769,6 +805,61 @@ function addEntry(){
 document.getElementById('addItem').onclick=addEntry;
 itemInput.addEventListener('keydown',e=>{ if(e.key==='Enter')addEntry(); });
 document.getElementById('clearItems').onclick=()=>{ items=[]; saveItems(); };
+
+/* --- wheel presets --- */
+let presets=store.get('gs_presets',null);
+if(!presets){
+  presets=[
+    {name:'Meal Wheel',items:['Pizza','Tacos','Sushi','Burgers','Thai','BBQ']},
+    {name:'Chores Wheel',items:['Dishes','Laundry','Trash','Vacuum','Dog duty','Bathrooms']},
+    {name:'Yes or No',items:['Yes','No']}
+  ];
+  store.set('gs_presets',presets);
+}
+const presetList=document.getElementById('presetList');
+const presetInput=document.getElementById('presetInput');
+function savePresets(){ store.set('gs_presets',presets); renderPresets(); }
+function renderPresets(){
+  if(!presets.length){ presetList.innerHTML='<div class="preset-empty">No saved wheels yet — build one above and save it.</div>'; return; }
+  const cur=JSON.stringify(items);
+  presetList.innerHTML=presets.map((p,i)=>{
+    const active=JSON.stringify(p.items)===cur?' current':'';
+    const preview=p.items.slice(0,4).join(' · ')+(p.items.length>4?' …':'');
+    return `<div class="preset-card${active}" data-i="${i}">
+      <div class="preset-name"><b>${escapeHtml(p.name)}</b><span>${escapeHtml(preview)}</span></div>
+      <div class="preset-count">${p.items.length}</div>
+      <button class="preset-del" data-del="${i}" title="Delete preset">✕</button>
+    </div>`;
+  }).join('');
+  presetList.querySelectorAll('.preset-card').forEach(c=>{
+    c.onclick=e=>{
+      if(e.target.closest('.preset-del'))return;
+      items=[...presets[+c.dataset.i].items];
+      saveItems();renderPresets();
+      tone(1050,.07,'sine',.12);tone(1320,.09,'sine',.1,.06);
+    };
+  });
+  presetList.querySelectorAll('.preset-del').forEach(b=>{
+    b.onclick=()=>{ presets.splice(+b.dataset.del,1); savePresets(); };
+  });
+}
+document.getElementById('savePreset').onclick=()=>{
+  const name=presetInput.value.trim();
+  if(!name){ showResult('House rules','Give your wheel a name first'); return; }
+  if(items.length<2){ showResult('House rules','Add at least two entries before saving'); return; }
+  const existing=presets.findIndex(p=>p.name.toLowerCase()===name.toLowerCase());
+  if(existing>=0){ presets[existing].items=[...items]; }
+  else{
+    if(presets.length>=15){ showResult('House rules','15 presets max — delete one first'); return; }
+    presets.push({name,items:[...items]});
+  }
+  presetInput.value='';
+  savePresets();
+  fanfare();
+  showResult('Wheel saved',name);
+};
+presetInput.addEventListener('keydown',e=>{ if(e.key==='Enter')document.getElementById('savePreset').click(); });
+renderPresets();
 
 /* ================= COIN ================= */
 let coinRot=0, headsN=store.get('gs_heads',0), tailsN=store.get('gs_tails',0), flipping=false;
